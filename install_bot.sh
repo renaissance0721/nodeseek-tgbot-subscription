@@ -15,11 +15,22 @@ RESET="\033[0m"
 BASE_DIR="/opt/flowerss"
 
 # ------------------------------------------
+# 环境预检
+# ------------------------------------------
+if [ "$EUID" -ne 0 ]; then 
+    echo -e "${RED}错误：请使用 root 用户运行此脚本！(或使用 sudo)${RESET}"
+    exit 1
+fi
+
+# ------------------------------------------
 # 功能模块 1：安装与配置机器人
 # ------------------------------------------
 install_bot() {
     echo -e "\n${YELLOW}▶ 开始执行安装/重装流程...${RESET}"
     
+    # 强制清理旧容器，避免挂载路径错位
+    docker rm -f flowerss-bot &> /dev/null
+
     # 检查并安装 Docker 环境
     if ! command -v docker &> /dev/null; then
         echo -e "${RED}未检测到 Docker，正在自动安装...${RESET}"
@@ -38,9 +49,10 @@ install_bot() {
         return
     fi
 
-    # 初始化目录结构
+    # 初始化目录结构并赋予最高权限以保证数据库写入
     echo -e "${GREEN}[+] 正在清理旧配置并创建工作目录: ${BASE_DIR}${RESET}"
     mkdir -p ${BASE_DIR}/data
+    chmod -R 777 ${BASE_DIR}
     rm -f ${BASE_DIR}/config.yml ${BASE_DIR}/docker-compose.yml
 
     # 自动生成配置文件
@@ -71,14 +83,13 @@ EOF
     cd ${BASE_DIR}
 
     if docker compose version &> /dev/null; then
-        docker compose down &> /dev/null
         docker compose up -d
     else
-        docker-compose down &> /dev/null
         docker-compose up -d
     fi
 
     echo -e "\n${GREEN}=== 部署完成！ ===${RESET}"
+    echo -e "${YELLOW}提示：由于重装清空了状态，请务必前往 Telegram 重新发送 /sub 指令以生成新的数据库文件。${RESET}"
 }
 
 # ------------------------------------------
@@ -98,21 +109,14 @@ view_logs() {
 # ------------------------------------------
 view_subscriptions() {
     DB_FILE="${BASE_DIR}/data/flowerss.db"
-    
-    # 1. 检查数据库文件是否存在
-    if [ ! -f "$DB_FILE" ]; then
-        echo -e "\n${RED}错误：未找到数据库文件！${RESET}"
-        echo -e "可能原因：1. 尚未添加任何订阅  2. Docker 挂载路径不正确"
-        return
-    fi
 
-    # 2. 检查并自动安装 sqlite3 环境
+    # 1. 检查并自动安装 sqlite3 环境 (去除静默，显示真实安装过程)
     if ! command -v sqlite3 &> /dev/null; then
         echo -e "${YELLOW}[!] 检测到未安装 sqlite3，正在尝试自动安装...${RESET}"
         if [ -f /etc/debian_version ]; then
-            apt update && apt install sqlite3 -y &> /dev/null
+            apt-get update && apt-get install sqlite3 -y
         elif [ -f /etc/redhat-release ]; then
-            yum install sqlite -y &> /dev/null
+            yum install sqlite -y
         else
             echo -e "${RED}无法识别的系统架构，请手动安装 sqlite3 后再试。${RESET}"
             return
@@ -120,15 +124,22 @@ view_subscriptions() {
         
         # 再次检查安装是否成功
         if ! command -v sqlite3 &> /dev/null; then
-            echo -e "${RED}自动安装失败，请检查网络或权限。${RESET}"
+            echo -e "${RED}自动安装失败，请检查上方输出的网络或源报错信息。${RESET}"
             return
         fi
         echo -e "${GREEN}[+] sqlite3 环境已就绪。${RESET}"
     fi
+    
+    # 2. 检查数据库文件是否存在
+    if [ ! -f "$DB_FILE" ]; then
+        echo -e "\n${RED}错误：未在外部存储目录找到数据库文件！${RESET}"
+        echo -e "路径：$DB_FILE"
+        echo -e "${YELLOW}解决方案：请前往 Telegram 给机器人发送 /sub 指令添加一个订阅，文件即刻生成。${RESET}"
+        return
+    fi
 
     # 3. 执行查询并美化输出
     echo -e "\n${CYAN}=== 当前机器人已订阅列表 ===${RESET}"
-    # 从 sources 表中提取 title 和 link
     LIST=$(sqlite3 "$DB_FILE" "SELECT title, link FROM sources;" 2>/dev/null)
 
     if [ -z "$LIST" ]; then
@@ -154,6 +165,7 @@ uninstall_bot() {
             else
                 docker-compose down
             fi
+            cd /opt
             rm -rf ${BASE_DIR}
             echo -e "${GREEN}卸载完成！${RESET}"
         fi
@@ -180,7 +192,7 @@ while true; do
     echo -e "\n${GREEN}========================================${RESET}"
     echo -e "${GREEN}       Flowerss-bot 一键管理工具箱      ${RESET}"
     echo -e "${GREEN}========================================${RESET}"
-    echo -e "  1. 安装 / 重装 RSS 机器人"
+    echo -e "  1. 安装 / 重装 RSS 机器人 (含修复挂载)"
     echo -e "  2. 查看机器人实时运行日志"
     echo -e "  3. 查看当前已订阅列表"
     echo -e "  4. 重启机器人容器"
