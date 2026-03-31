@@ -94,34 +94,49 @@ view_logs() {
 }
 
 # ------------------------------------------
-# 功能模块 3：查看已订阅列表 (新增)
+# 功能模块 3：查看已订阅列表 (含自动安装环境)
 # ------------------------------------------
 view_subscriptions() {
     DB_FILE="${BASE_DIR}/data/flowerss.db"
-    if [ -f "$DB_FILE" ]; then
-        echo -e "\n${CYAN}=== 当前机器人已订阅列表 ===${RESET}"
-        
-        # 检查并安装 sqlite3 工具（如果不存在）
-        if ! command -v sqlite3 &> /dev/null; then
-            echo -e "${YELLOW}[!] 检测到未安装 sqlite3，正在自动安装以读取数据库...${RESET}"
-            apt update && apt install sqlite3 -y &> /dev/null || yum install sqlite -y &> /dev/null
-        fi
-        
-        # 从数据库中提取标题和链接
-        # flowerss-bot 的数据库表名为 sources，字段为 title 和 link
-        LIST=$(sqlite3 "$DB_FILE" "SELECT title, link FROM sources;" 2>/dev/null)
-        
-        if [ -z "$LIST" ]; then
-            echo -e "${RED}目前还没有任何订阅数据。${RESET}"
-            echo -e "提示：请先在 Telegram 中使用 /sub 命令添加订阅。"
-        else
-            # 格式化输出列表
-            echo "$LIST" | awk -F'|' '{printf "\033[32m● %s\033[0m\n   🔗 %s\n", $1, $2}'
-        fi
-        echo -e "${CYAN}========================================${RESET}"
-    else
-        echo -e "\n${RED}未找到数据库文件，请确认机器人已成功启动并至少添加过一个订阅。${RESET}"
+    
+    # 1. 检查数据库文件是否存在
+    if [ ! -f "$DB_FILE" ]; then
+        echo -e "\n${RED}错误：未找到数据库文件！${RESET}"
+        echo -e "可能原因：1. 尚未添加任何订阅  2. Docker 挂载路径不正确"
+        return
     fi
+
+    # 2. 检查并自动安装 sqlite3 环境
+    if ! command -v sqlite3 &> /dev/null; then
+        echo -e "${YELLOW}[!] 检测到未安装 sqlite3，正在尝试自动安装...${RESET}"
+        if [ -f /etc/debian_version ]; then
+            apt update && apt install sqlite3 -y &> /dev/null
+        elif [ -f /etc/redhat-release ]; then
+            yum install sqlite -y &> /dev/null
+        else
+            echo -e "${RED}无法识别的系统架构，请手动安装 sqlite3 后再试。${RESET}"
+            return
+        fi
+        
+        # 再次检查安装是否成功
+        if ! command -v sqlite3 &> /dev/null; then
+            echo -e "${RED}自动安装失败，请检查网络或权限。${RESET}"
+            return
+        fi
+        echo -e "${GREEN}[+] sqlite3 环境已就绪。${RESET}"
+    fi
+
+    # 3. 执行查询并美化输出
+    echo -e "\n${CYAN}=== 当前机器人已订阅列表 ===${RESET}"
+    # 从 sources 表中提取 title 和 link
+    LIST=$(sqlite3 "$DB_FILE" "SELECT title, link FROM sources;" 2>/dev/null)
+
+    if [ -z "$LIST" ]; then
+        echo -e "${RED}数据库内暂无订阅数据。${RESET}"
+    else
+        echo "$LIST" | awk -F'|' '{printf "\033[32m● %s\033[0m\n   🔗 %s\n", $1, $2}'
+    fi
+    echo -e "${CYAN}========================================${RESET}"
 }
 
 # ------------------------------------------
@@ -167,7 +182,7 @@ while true; do
     echo -e "${GREEN}========================================${RESET}"
     echo -e "  1. 安装 / 重装 RSS 机器人"
     echo -e "  2. 查看机器人实时运行日志"
-    echo -e "  3. 查看当前已订阅列表 (新)"
+    echo -e "  3. 查看当前已订阅列表"
     echo -e "  4. 重启机器人容器"
     echo -e "  5. 停止机器人容器"
     echo -e "  6. 获取 NodeSeek 常用 RSS 源"
