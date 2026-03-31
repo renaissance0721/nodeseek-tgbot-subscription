@@ -43,7 +43,7 @@ install_bot() {
     mkdir -p ${BASE_DIR}/data
     rm -f ${BASE_DIR}/config.yml ${BASE_DIR}/docker-compose.yml
 
-    # 自动生成配置文件 (利用 EOF 避免手动输入的缩进错误)
+    # 自动生成配置文件
     echo -e "${GREEN}[+] 正在生成 config.yml...${RESET}"
     cat <<EOF > ${BASE_DIR}/config.yml
 bot_token: "${BOT_TOKEN}"
@@ -70,7 +70,6 @@ EOF
     echo -e "${GREEN}[+] 正在启动 Docker 容器...${RESET}"
     cd ${BASE_DIR}
 
-    # 兼容新老版本的 docker-compose 命令
     if docker compose version &> /dev/null; then
         docker compose down &> /dev/null
         docker compose up -d
@@ -80,8 +79,6 @@ EOF
     fi
 
     echo -e "\n${GREEN}=== 部署完成！ ===${RESET}"
-    echo -e "1. 请前往 Telegram 给你的机器人发送 /start"
-    echo -e "2. 想要订阅 NodeSeek，可在选单中查看推荐链接"
 }
 
 # ------------------------------------------
@@ -90,19 +87,45 @@ EOF
 view_logs() {
     if [ -d "$BASE_DIR" ]; then
         echo -e "\n${YELLOW}▶ 正在实时显示机器人日志 (按 Ctrl+C 退出查看)...${RESET}"
-        cd ${BASE_DIR}
-        if docker compose version &> /dev/null; then
-            docker compose logs -f
-        else
-            docker-compose logs -f
-        fi
+        docker logs -f flowerss-bot
     else
         echo -e "\n${RED}未找到安装目录，请先执行安装步骤！${RESET}"
     fi
 }
 
 # ------------------------------------------
-# 功能模块 3：彻底卸载
+# 功能模块 3：查看已订阅列表 (新增)
+# ------------------------------------------
+view_subscriptions() {
+    DB_FILE="${BASE_DIR}/data/flowerss.db"
+    if [ -f "$DB_FILE" ]; then
+        echo -e "\n${CYAN}=== 当前机器人已订阅列表 ===${RESET}"
+        
+        # 检查并安装 sqlite3 工具（如果不存在）
+        if ! command -v sqlite3 &> /dev/null; then
+            echo -e "${YELLOW}[!] 检测到未安装 sqlite3，正在自动安装以读取数据库...${RESET}"
+            apt update && apt install sqlite3 -y &> /dev/null || yum install sqlite -y &> /dev/null
+        fi
+        
+        # 从数据库中提取标题和链接
+        # flowerss-bot 的数据库表名为 sources，字段为 title 和 link
+        LIST=$(sqlite3 "$DB_FILE" "SELECT title, link FROM sources;" 2>/dev/null)
+        
+        if [ -z "$LIST" ]; then
+            echo -e "${RED}目前还没有任何订阅数据。${RESET}"
+            echo -e "提示：请先在 Telegram 中使用 /sub 命令添加订阅。"
+        else
+            # 格式化输出列表
+            echo "$LIST" | awk -F'|' '{printf "\033[32m● %s\033[0m\n   🔗 %s\n", $1, $2}'
+        fi
+        echo -e "${CYAN}========================================${RESET}"
+    else
+        echo -e "\n${RED}未找到数据库文件，请确认机器人已成功启动并至少添加过一个订阅。${RESET}"
+    fi
+}
+
+# ------------------------------------------
+# 功能模块 4：彻底卸载
 # ------------------------------------------
 uninstall_bot() {
     echo -e "\n${RED}⚠️ 警告：这将删除机器人的所有配置和订阅数据！${RESET}"
@@ -116,29 +139,22 @@ uninstall_bot() {
             else
                 docker-compose down
             fi
-            cd /opt
             rm -rf ${BASE_DIR}
-            echo -e "${GREEN}卸载完成，所有数据已完全清除！${RESET}"
-        else
-            echo -e "${RED}未找到安装目录，可能已经卸载。${RESET}"
+            echo -e "${GREEN}卸载完成！${RESET}"
         fi
     else
-        echo -e "${GREEN}已取消卸载操作。${RESET}"
+        echo -e "${GREEN}已取消。${RESET}"
     fi
 }
 
 # ------------------------------------------
-# 功能模块 4：展示推荐 RSS 节点 (支持板块过滤)
+# 功能模块 5：展示推荐 RSS 节点
 # ------------------------------------------
 show_rss_links() {
     echo -e "\n${CYAN}=== 推荐 NodeSeek RSS 订阅源 ===${RESET}"
-    echo -e "请复制以下链接，去 TG 机器人私聊发送 ${GREEN}/sub 链接${RESET} 即可订阅："
-    echo -e "\n[全站实时监控]"
-    echo -e "🔗 https://www.nodeseek.com/rss.xml"
-    echo -e "\n[仅监控二手交易区] (适合专门收鸡/出鸡)"
-    echo -e "🔗 https://www.nodeseek.com/categories/trade/rss.xml"
-    echo -e "\n[仅监控优惠情报区] (适合蹲抢神机)"
-    echo -e "🔗 https://www.nodeseek.com/categories/offers/rss.xml"
+    echo -e "🔗 全站监控: https://www.nodeseek.com/rss.xml"
+    echo -e "🔗 二手交易: https://www.nodeseek.com/categories/trade/rss.xml"
+    echo -e "🔗 优惠情报: https://www.nodeseek.com/categories/offers/rss.xml"
     echo -e "-----------------------------------------"
 }
 
@@ -151,49 +167,28 @@ while true; do
     echo -e "${GREEN}========================================${RESET}"
     echo -e "  1. 安装 / 重装 RSS 机器人"
     echo -e "  2. 查看机器人实时运行日志"
-    echo -e "  3. 重启机器人容器"
-    echo -e "  4. 停止机器人容器"
-    echo -e "  5. 获取 NodeSeek 常用 RSS 源 (含板块)"
-    echo -e "  6. 彻底卸载机器人及数据"
+    echo -e "  3. 查看当前已订阅列表 (新)"
+    echo -e "  4. 重启机器人容器"
+    echo -e "  5. 停止机器人容器"
+    echo -e "  6. 获取 NodeSeek 常用 RSS 源"
+    echo -e "  7. 彻底卸载机器人及数据"
     echo -e "  0. 退出脚本"
     echo -e "${GREEN}========================================${RESET}"
-    read -p "请输入选项序号 [0-6]: " CHOICE
+    read -p "请输入选项序号 [0-7]: " CHOICE
 
     case $CHOICE in
-        1)
-            install_bot
-            ;;
-        2)
-            view_logs
-            ;;
-        3)
-            if [ -d "$BASE_DIR" ]; then
-                cd ${BASE_DIR} && docker restart flowerss-bot &> /dev/null
-                echo -e "\n${GREEN}▶ 重启指令已发送，机器人已重启！${RESET}"
-            else
-                echo -e "\n${RED}未找到安装目录，请先执行安装！${RESET}"
-            fi
-            ;;
+        1) install_bot ;;
+        2) view_logs ;;
+        3) view_subscriptions ;;
         4)
-            if [ -d "$BASE_DIR" ]; then
-                cd ${BASE_DIR} && docker stop flowerss-bot &> /dev/null
-                echo -e "\n${YELLOW}▶ 机器人已停止运行！${RESET}"
-            else
-                echo -e "\n${RED}未找到安装目录，请先执行安装！${RESET}"
-            fi
+            docker restart flowerss-bot &> /dev/null && echo -e "\n${GREEN}▶ 重启成功！${RESET}" || echo -e "\n${RED}失败：机器人未运行。${RESET}"
             ;;
         5)
-            show_rss_links
+            docker stop flowerss-bot &> /dev/null && echo -e "\n${YELLOW}▶ 机器人已停止！${RESET}" || echo -e "\n${RED}失败：机器人未运行。${RESET}"
             ;;
-        6)
-            uninstall_bot
-            ;;
-        0)
-            echo -e "\n${GREEN}感谢使用，再见！${RESET}"
-            exit 0
-            ;;
-        *)
-            echo -e "\n${RED}输入错误，请重新选择 [0-6] 之间的有效数字。${RESET}"
-            ;;
+        6) show_rss_links ;;
+        7) uninstall_bot ;;
+        0) echo -e "\n${GREEN}再见！${RESET}"; exit 0 ;;
+        *) echo -e "\n${RED}输入错误，请重新选择。${RESET}" ;;
     esac
 done
