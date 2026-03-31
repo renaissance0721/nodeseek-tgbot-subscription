@@ -60,7 +60,8 @@ install_bot() {
     cat <<EOF > ${BASE_DIR}/config.yml
 bot_token: "${BOT_TOKEN}"
 update_interval: 1
-sqlite_path: "/root/.flowerss/data/flowerss.db"
+sqlite:
+  path: /root/.flowerss/data/flowerss.db
 EOF
 
     # 自动生成 Docker Compose 文件
