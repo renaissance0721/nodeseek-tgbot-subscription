@@ -196,7 +196,7 @@ while true; do
     echo -e "  3. 查看当前已订阅列表"
     echo -e "  4. 重启机器人容器"
     echo -e "  5. 停止机器人容器"
-    echo -e "  6. 获取 NodeSeek 常用 RSS 源"
+    echo -e "  6. 获取 NodeSeek RSS 源"
     echo -e "  7. 彻底卸载机器人及数据"
     echo -e "  0. 退出脚本"
     echo -e "${GREEN}========================================${RESET}"
