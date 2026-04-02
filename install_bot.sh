@@ -181,8 +181,6 @@ uninstall_bot() {
 show_rss_links() {
     echo -e "\n${CYAN}=== 推荐 NodeSeek RSS 订阅源 ===${RESET}"
     echo -e "🔗 全站监控: https://www.nodeseek.com/rss.xml"
-    echo -e "🔗 二手交易: https://www.nodeseek.com/categories/trade/rss.xml"
-    echo -e "🔗 优惠情报: https://www.nodeseek.com/categories/offers/rss.xml"
     echo -e "-----------------------------------------"
 }
 
